@@ -6,6 +6,7 @@ from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 from PIL import Image
 import numpy as np
 import pickle
+import tqdm
 
 class HandwrittenTextDataset(Dataset):
     def __init__(self, df, processor, max_target_length=128):
@@ -19,6 +20,10 @@ class HandwrittenTextDataset(Dataset):
     def __getitem__(self, idx):
         image_data = self.df['im'][idx]
         text = self.df['text'][idx]
+        language = self.df['language'][idx]
+        shelfmark = self.df['shelfmark'][idx]
+        project = self.df['project'][idx]
+
         # Ensure image_data is in numpy array format
         if isinstance(image_data, Image.Image):
             image = image_data
@@ -38,7 +43,11 @@ class HandwrittenTextDataset(Dataset):
             "pixel_values": pixel_values.squeeze(),
             "labels": torch.tensor(labels),
             "text": text,
-            "original_image": image_data  # Ensure it's numpy array
+            "original_image": image_data,
+            "language": language,
+            "index": idx,
+            "project": project,
+            "shelfmark": shelfmark
         }
 def load_and_prepare_dataset(script="Cursiva", lang=None, split="test"):
     dataset = load_dataset("CATMuS/medieval", split=split)
@@ -53,7 +62,7 @@ def compute_cer_per_image(model, processor, dataset, device, cer_threshold):
     model.eval()
     flagged_results = []
 
-    for idx in range(len(dataset)):
+    for idx in tqdm.tqdm(range(len(dataset))):
         data = dataset[idx]
         pixel_values = data["pixel_values"].unsqueeze(0).to(device)
         outputs = model.generate(pixel_values)
@@ -69,7 +78,10 @@ def compute_cer_per_image(model, processor, dataset, device, cer_threshold):
                 "original_image": data["original_image"],
                 "text": data["text"],
                 "predicted_text": pred_str[0],
-                "cer": cer
+                "cer": cer,
+                "shelfmark": data["shelfmark"],
+                "project": data["project"],
+                "language": data["language"]
             })
 
     return pd.DataFrame(flagged_results)
@@ -97,5 +109,5 @@ process_dataset(
     from_pretrained_model="./Caroline", # Change this to the HugggingFace repo
     device='mps', 
     cer_threshold=0.0, 
-    output_filename="flagged_caroline_latin_train"
+    output_filename="flagged_caroline_latin_validation"
 )
